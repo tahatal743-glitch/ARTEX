@@ -28,8 +28,9 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN mkdir -p server/webui/dist && cp -r /web/out/. server/webui/dist/ \
-    && CGO_ENABLED=0 GOARCH="${TARGETARCH}" go build -tags embedui -trimpath -o /out/artex ./cmd/artex
+# 前端静态产物从 web 阶段拷入（.dockerignore 已排除宿主 dist，不会冲突）
+COPY --from=web /web/out/ server/webui/dist/
+RUN CGO_ENABLED=0 GOARCH="${TARGETARCH}" go build -tags embedui -trimpath -o /out/artex ./cmd/artex
 
 ########## 阶段 3：运行镜像（同原版：工具 + Playwright 预装）##########
 FROM python:3.12-slim-bookworm
