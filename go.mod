@@ -1,5 +1,10 @@
 module github.com/Autumn-27/artex
 
+// Upstream github.com/Autumn-27/norma went closed-source and is no
+// longer publicly accessible; v0.4.3 was restored from the Go module
+// proxy into ./norma.
+replace github.com/Autumn-27/norma => ./norma
+
 go 1.26.3
 
 require (
