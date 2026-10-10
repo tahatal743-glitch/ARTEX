@@ -5,7 +5,7 @@
 AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 
-🌐 **在线 Demo**： [https://artex-demo.vercel.app/](https://artex-demo.vercel.app/)
+🌐 **在线 Demo（模拟数据）**： [https://artex-demo.mhtsec.com](https://artex-demo.mhtsec.com)
 
 📦 **该仓库为ARTEX最后一个版本纯源码备份。原 Docker 镜像源 `autumn27/artex` 已失效，现由本仓库自维护镜像 `mianhuatang11/artex`（Docker Hub）；拉取失败时可 `docker compose build` 从纯源码本地构建，无任何外部预编译依赖。**
 
@@ -15,7 +15,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 ## 截图预览
 
-> 完整交互见[在线 Demo](https://artex-demo.vercel.app/)。
+> 完整交互见[在线 Demo](https://artex-demo.mhtsec.com)（纯前端 + Mock 数据，无需后端）。
 
 | 仪表盘（总览 / Token 消耗 / 活动流） | 任务列表 |
 | :---: | :---: |
@@ -283,6 +283,11 @@ server {
 - 前端：`cd web && npm run dev`（`/api` 反代到后端，带热更新）
 - 测试：`go test ./...`
 - Mock 预览（无后端）：`cd web && NEXT_PUBLIC_MOCK=1 npm run dev`
+- 在线 Demo 重新部署（Cloudflare Pages，静态导出 + Mock 数据）：
+  ```bash
+  cd web && NEXT_PUBLIC_MOCK=1 npm run build:static
+  CLOUDFLARE_API_TOKEN=<token> npx wrangler pages deploy out --project-name=artex-demo --branch=main
+  ```
 
 ---
 
