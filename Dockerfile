@@ -33,6 +33,10 @@ RUN mkdir -p server/webui/dist && cp -r /web/out/. server/webui/dist/ \
 
 ########## 阶段 3：运行镜像（同原版：工具 + Playwright 预装）##########
 FROM python:3.12-slim-bookworm
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+# 运行层的全局 npm 装包与 chromium 下载同样走国内源（对全球网络同样可达）
+ENV npm_config_registry=$NPM_REGISTRY \
+    PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 # 常用工具：ripgrep / curl / vim，加一批 recon 常备件（按需增删）。
 # Node 从 NodeSource 装 20.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
 RUN apt-get update && apt-get install -y --no-install-recommends \
