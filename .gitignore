@@ -58,3 +58,9 @@ Thumbs.db
 /bench/
 /Dockerfile.bench
 /Dockerfile.bench.v2
+
+# This machine's deployment credentials and generated artifacts.
+/private/
+/local-deploy/source.tar
+/local-deploy/*.log
+/local-deploy/downloads/

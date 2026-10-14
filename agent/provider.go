@@ -258,6 +258,7 @@ func (c Config) NewProvider() (llm.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	installLocalResponsesCompat(c, client)
 	lc := llm.Config{
 		Format:     c.Format,
 		BaseURL:    c.BaseURL,

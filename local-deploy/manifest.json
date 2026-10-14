@@ -1,0 +1,12 @@
+{
+  "source_commit": "5c0dbd4bec940f3c0faf20705a56d879b57d3dfe",
+  "health": {
+    "ok": true,
+    "service": "artex",
+    "version": "v0.3.15-local"
+  },
+  "binary_sha256": "e15a04c6408dd39bb1a6cbbe6db998bf76f516df2426bd20a76e0f502fdc18ec",
+  "upstream_binary_sha256": "56bd52ae73657720d75308c9301f7128d0ef2147960cd80c3a794b05677b6393",
+  "tool_smoke_conversation_id": 1,
+  "windows_stop_start_passed": true
+}
