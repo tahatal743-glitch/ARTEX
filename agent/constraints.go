@@ -44,6 +44,6 @@ func constraintBlock(ts *db.ExplorationStore) string {
 		b.WriteString("\n禁止的操作：\n")
 		b.WriteString(strings.Join(deny, "\n"))
 	}
-	b.WriteString("\n（发现约束之外的新目标/新端口/新主机，不等于获得授权：除非它落在上述允许范围内，否则记为 out-of-scope 事实并跳过，不得为其派生意图或执行动作。）")
+	b.WriteString("\n（约束之外的新目标/新端口/新主机不自动纳入本次范围：除非它落在上述允许范围内，否则记为 out-of-scope 事实并跳过，不为其派生意图或执行动作。）")
 	return b.String()
 }

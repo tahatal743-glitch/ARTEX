@@ -499,6 +499,7 @@ func (s *Server) seedOrchestrationTools() {
 	s.reseedMainAgentPrompt()         // mainagent 提示词加入「目标达成后 add_intent 反问是否建目标」(一次性)
 	s.reseedPlannerPrompt()           // planner 提示词:重写「0 意图」正当理由 + 加量化验收核对(一次性)
 	s.reseedWorkerPrompt()            // worker 提示词:加否定结论证据门槛(一次性)
+	s.reseedAuthzPrompt()             // 全部角色提示词顶部加 CSI 风格「授权状态」段,并把范围措辞改为服从式(一次性)
 	s.seedReporterAgent()             // 预置「报告撰写」agent + 工具绑定 + finding 触发器(一次性)
 	s.upgradeReporterTriggerMessage() // 老库补迁移:让 reporter 回传 evidence_version(一次性)
 	s.seedFindingTrafficTools()       // 增加可选证据参数及只读证据工具，保留用户配置
@@ -682,6 +683,46 @@ func (s *Server) reseedWorkerPrompt() {
 		return
 	}
 	log.Printf("[prompts] worker 提示词已追加新默认版本(查上下文段收敛为 list_assets/list_findings,去掉 list_facts/node_detail/asset_neighbors,一次性)")
+}
+
+// reseedAuthzPrompt 把全部内置角色提示词刷成【当前代码默认】——默认正文顶部新增了 CSI 风格的
+// 「授权状态 / 范围与深度」段(授权前置裁决、边界内全力推进),并把 ARTEX 原有的克制式范围措辞
+// (遇疑即停/范围外一律不碰)改为 CSI 的服从式措辞。SeedPromptIfEmpty 首插入 only,旧库已有版本收不到,
+// 故用版本管理【追加一个新版本】并切过去(ResetPromptToDefault),旧版本仍保留在历史里可找回。
+// settings flag 守卫 → 只做一次。全新库无需处理(SeedPromptIfEmpty 已 seed 最新默认)。与 reseedGoalsPrompt 同构。
+func (s *Server) reseedAuthzPrompt() {
+	const flag = "authz_prompt_port_v1"
+	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
+		return
+	}
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	seeds := agent.BuiltinPromptSeeds()
+	for _, key := range []string{"goals", "planner", "mainagent", "worker", "auto", "pentest"} {
+		s.reseedPromptByKey(key, seeds[key])
+	}
+	// reporter / retester 的提示词不走 BuiltinPromptSeeds,单独取常量。
+	s.reseedPromptByKey("reporter", agent.ReporterDefaultPrompt)
+	s.reseedPromptByKey(db.FindingRetestAgentKey, agent.RetesterDefaultPrompt)
+	log.Printf("[prompts] 已追加「授权状态」新默认版本(goals/planner/worker/mainagent/auto/pentest/reporter/retester,一次性)")
+}
+
+// reseedPromptByKey appends tmpl as a new version for the agent keyed key — skipping
+// when the key is absent (fresh DB, seedPrompts already seeded the latest default)
+// or when the current version already equals tmpl. No-op on empty tmpl.
+func (s *Server) reseedPromptByKey(key, tmpl string) {
+	if tmpl == "" {
+		return
+	}
+	a, err := s.m.pg.GetAgentByKey(key)
+	if err != nil || a == nil {
+		return
+	}
+	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
+		return
+	}
+	if _, err := s.m.pg.ResetPromptToDefault(a.ID, tmpl); err != nil {
+		log.Printf("[prompts] %s 提示词重刷为新默认失败: %v", key, err)
+	}
 }
 
 // reporterToolCallMessage 必须无条件要求先读一次 get_finding_traffic 再写报告。
