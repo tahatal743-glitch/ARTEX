@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
@@ -514,10 +515,8 @@ export default function SystemSettingsPage() {
                   {braveKeySet && <span className="ml-2 text-xs text-emerald-500">已配置</span>}
                 </Label>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <SecretInput
                     id="brave-key"
-                    type="password"
-                    autoComplete="off"
                     placeholder={braveKeySet ? "已配置（留空则不变）" : "输入 Brave API Key"}
                     value={braveKeyInput}
                     disabled={!loaded || savingKey}
@@ -549,10 +548,8 @@ export default function SystemSettingsPage() {
                   {tavilyKeySet && <span className="ml-2 text-xs text-emerald-500">已配置</span>}
                 </Label>
                 <div className="flex items-center gap-2">
-                  <Input
+                  <SecretInput
                     id="tavily-key"
-                    type="password"
-                    autoComplete="off"
                     placeholder={tavilyKeySet ? "已配置（留空则不变）" : "输入 Tavily API Key（tvly-…）"}
                     value={tavilyKeyInput}
                     disabled={!loaded || savingTavilyKey}

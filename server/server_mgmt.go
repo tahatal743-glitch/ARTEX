@@ -1807,7 +1807,7 @@ func (s *Server) pgSaveProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p := body.LLMProfile
-	p.APIKey = body.APIKey
+	p.APIKey = strings.TrimSpace(body.APIKey)
 	p.Streaming = body.Streaming == nil || *body.Streaming
 	// 输出上限:负数无意义,归零(= 不发送该字段)。字段名开关只有 Chat Completions
 	// 用得上——anthropic 与 openai-responses 各自定死了字段名,存下来只会误导后续读者,
@@ -1992,7 +1992,7 @@ func (s *Server) pgListModels(w http.ResponseWriter, r *http.Request) {
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" && req.ProfileID != nil {
 		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
-			apiKey = p.APIKey
+			apiKey = strings.TrimSpace(p.APIKey)
 		}
 	}
 	if apiKey == "" {

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
@@ -172,8 +173,7 @@ function DataSourceCard({
               </div>
               <div className="space-y-1.5">
                 <Label>API Key（X-API-Key，留空保留原值）</Label>
-                <Input
-                  type="password"
+                <SecretInput
                   placeholder="ssk_..."
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}

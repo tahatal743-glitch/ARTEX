@@ -282,3 +282,10 @@ html {
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* 密钥框的遮字。刻意用 CSS 而不是 type="password"：浏览器的密码管理器只认 password
+   字段，一旦用它，ARTEX 的登录页和各个密钥框就会被归成同一个登录表单，点保存就弹
+   「要更新密码吗？」并把登录密码填进密钥框。详见 components/ui/secret-input.tsx。 */
+.secret-mask {
+  -webkit-text-security: disc;
+}

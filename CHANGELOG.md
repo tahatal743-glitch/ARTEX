@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-10-14
+
+### 前端
+
+#### 修复的问题
+
+- **密钥输入框不再被浏览器的密码管理器当成登录框**：LLM 配置的 API Key、MCP 同步的 API Key、设置页的 Brave / Tavily API Key 原先都是 `type="password"`。浏览器的密码管理器只认这个类型，于是把登录页与这几处密钥框归成同一个登录表单：在任意一处点「保存」都会弹「要更新密码吗？」，并把已存的那组凭据（实际是 ARTEX 的登录密码）当作默认值填进密钥框。本项目已经因此把一段 11 位的旧密码存成过 LLM 的 API Key，症状是此后每次「测试连接 / 获取模型」都 401，用起来像"每次都要重输一遍 Key"。
+- **改法**：新增 `components/ui/secret-input.tsx`，用 `type="text"` + CSS 遮字（`-webkit-text-security: disc`，类名 `.secret-mask`）取代 `type="password"`，并配一个眼睛按钮便于核对框内内容。密码管理器看不到 password 字段，即不再介入。登录页、初始化页、改密码对话框保持 `type="password"` 不变——那是真密码，本就该由浏览器管理。
+
+#### 设计说明
+
+- **`autocomplete` 挡不住这个问题**：先试过 `autocomplete="off"` 与 `"new-password"`，Chrome 依然弹保存/更新提示。只要字段还是 password 类型，就没有可靠的退出方式，因此改为不使用 password 类型。
+- **遮字只有 Chromium 系支持**：其余浏览器会明文显示，故配套眼睛按钮。这些是本地管理界面里的密钥，不是交给浏览器托管的凭据。
+
+### 后端
+
+#### 修复的问题
+
+- **存量 API Key 与表单 Key 的归一化不一致**：`pgListModels` 对表单传入的 key 做了 `TrimSpace`，但从 profile 回退取存量 key 时没有；`testLLM` 同理。若 Key 首尾带空白（粘贴时常见），会出现「手动输入能通、留空走存量失败」的错位。现将三处统一：`pgSaveProfile` 保存前、`pgListModels` 与 `testLLM` 回退取存量 Key 时，一律 `TrimSpace`。
+
 ## [0.3.19] - 2026-10-14
 
 ### 提示词

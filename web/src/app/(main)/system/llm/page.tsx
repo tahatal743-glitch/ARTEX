@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -596,9 +597,8 @@ function ProfileSheet({
 
           <div className="grid gap-2">
             <Label htmlFor="p-api-key">API Key</Label>
-            <Input
+            <SecretInput
               id="p-api-key"
-              type="password"
               placeholder={keyHint ? `已设置（${keyHint}），留空保持不变` : "sk-…"}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
