@@ -25,7 +25,8 @@ case "${1:-all}" in
     test -f web/out/index.html
     mkdir -p server/webui/dist
     cp -a web/out/. server/webui/dist/
-    CGO_ENABLED=0 go build -trimpath -tags embedui -ldflags '-s -w -X main.version=v0.3.15-local' -o /opt/artex/runtime/artex ./cmd/artex
+    VERSION="$(git -c core.autocrlf=true -C /mnt/f/ARTEX describe --tags --always --dirty 2>/dev/null || echo dev)"
+    CGO_ENABLED=0 go build -trimpath -tags embedui -ldflags "-s -w -X main.version=$VERSION" -o /opt/artex/runtime/artex ./cmd/artex
     cp -a skills /opt/artex/runtime/
     cp start.sh /opt/artex/runtime/start.sh
     chmod +x /opt/artex/runtime/start.sh
