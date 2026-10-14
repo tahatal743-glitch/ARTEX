@@ -7,7 +7,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 🌐 **在线 Demo**： [https://artex-demo.vercel.app/](https://artex-demo.vercel.app/)
 
-📦 **该仓库为ARTEX最后一个版本纯源码备份，docker部署源失效自行让AI本地构建即可**
+📦 **本仓库为 ARTEX 的长期维护 fork（上游 `Autumn-27/ARTEX` 已 404）。Release 供本机与家里 Mac 一键更新使用；docker 镜像发布暂停。**
 
 </div>
 
