@@ -19,6 +19,13 @@
 - **fail-closed**：校验查询本身失败（DB 侧）时拒绝本次收官，下一轮心跳重试。
 - **两层互补**：工具层给模型即时反馈（改道 `prove_goal`）；落点层兜住所有收官路径（含模型之外的路径）。移植来源：CyberStrikeAI `internal/agentfinalizer/decision.go`（`Decide`/`hasCompletedEvidence`，Apache-2.0）与 `internal/handler/finalization_auto_continue.go`（缺证据不收敛、让 agent 继续跑）。
 
+#### 验收（公司机实测，2026-10-15）
+
+- **单元测试**（WSL PG，`ARTEX_CONFIG` 指向运行配置、以 artex 用户跑）：`TestGoalEvidenceGap`（跨任务证据算数、证据节点被删落回缺证据、非 fact/finding 的 proves 源不算）、`TestGoalMetEvidenceGate`（open 拒 / 缺边拒 / 有边放 / 开关关恢复旧行为）、`TestProveGoalAutoCompleteEvidenceGate`（缺证据兄弟目标不自动收官、补齐后自动收官）—— 全绿。
+- **A/B/D/E 对照**（SQL 构造状态 + 任务控制 API 驱动，脚本 `F:\Claude_Code\_scratch_finalizer\`）：**A** 旧二进制「met 无证据 + 前沿抽干」→ 3 秒落 `done`（旁路实锤）；**B** 新二进制同状态 → 拒绝收官：目标退回 `open`、写入系统 hint、任务保持 running（服务日志 `[finalizer] task 6 证据门未过(goalless): open=0 unproven=1 — 拒绝收官`）；**D** 新二进制 + `goal_evidence_gate=false` → 恢复旧行为落 `done`（开关有效）；**E** 新二进制「有 proves 证据边」→ 正常落 `done`（无误伤）。
+- **LLM 全链路**：绑定 `goal_met` 给 planner + 植入「直接调 goal_met」的提示 → 模型照做但被工具拒绝（转录原文「证据门未通过，本次不能宣布任务完成：- 仍未达成（open）的目标…」）；模型随后自行改道——派意图验证本机回环、记录事实 #61、`prove_goal(58, 61)` 自动收官 → 任务正常 `done`（同时覆盖 planner 判 met 的落点）。验收后 `goal_met` 已解绑还原。
+- 部署：`v0.3.20-13-g2d31c23`（干净版本号），sha256 `8e8da7958d792edd3796e2563033cc95995435bf898a36d4306f7cd225a41566`，备份 `artex.pre-finalizer-20261015-162021`。
+
 ### 工具
 
 #### 新增的功能
