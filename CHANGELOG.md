@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-10-15
+
 ### 任务收官
 
 #### 新增的功能
@@ -41,6 +43,10 @@
 - **跳过 3 条**：`exec`（等价于 Bash）、`execute-python-script`、`install-python-package`（ARTEX 有 script kind 与 Bash，重复）。
 - **sqlmap 覆盖**：CSI 配方指向它自带的 Windows python 副本（`F:/CyberStrikeAI/.tools/sqlmap/sqlmap.py`），已改写为系统 `sqlmap`（WSL Kali 自带）。
 - **验收**：单元测试 10 个（nmap 默认参数、scan_type 替换、布尔真假、additional_args 切分、必填校验、子命令 position 0、位置序、引号安全、真实配方解析）；真机让 mainagent 用 nmap 扫 127.0.0.1 的 22/80 端口，返回真实扫描报告（`-p 22,80` 生效，22/tcp、80/tcp 均为 closed）。
+
+#### 修复的问题
+
+- **数值参数不再被渲染成科学计数法**：argv 拼装用 `%v` 格式化参数值，而 Go 对 `float64` 在 1e6 及以上会切成指数写法——masscan 的 `--rate` 常以百万计，传 `1000000` 会被拼成 `1e+06` 交给命令行，工具只会报参数非法。现在 `float64` 一律走十进制定点格式，其余类型（字符串 / 布尔 / 数组 / 对象）行为不变。该格式化沿用自 CSI `internal/security/executor.go` 的 `formatParamValue`，上游同样有 `%v` 的问题，本修在本仓先行。
 
 ## [0.3.20] - 2026-10-14
 ### 拦截
@@ -1009,7 +1015,8 @@
 - [@Autumn-27](https://github.com/Autumn-27)
 - [@neouks](https://github.com/neouks)
 
-[Unreleased]: https://github.com/Autumn-27/ARTEX/compare/v0.3.10...HEAD
+[Unreleased]: https://github.com/tahatal743-glitch/ARTEX/compare/v0.3.21...HEAD
+[0.3.21]: https://github.com/tahatal743-glitch/ARTEX/compare/v0.3.20...v0.3.21
 [0.3.10]: https://github.com/Autumn-27/ARTEX/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/Autumn-27/ARTEX/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/Autumn-27/ARTEX/compare/v0.3.7...v0.3.8
