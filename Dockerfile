@@ -1,17 +1,43 @@
 # syntax=docker/dockerfile:1
 #
-# 运行镜像（不在镜像里编译）：只装常用工具，放入**预编译好的 Linux 单二进制**。
-# 二进制由 CI 的 binaries job 交叉编译（纯 Go、无 QEMU），按目标架构放在
-# 构建上下文的 dist/<TARGETARCH>/artex。这样多架构构建时 arm64 只需模拟 apt 层，
-# 不再模拟 Next/Go 编译，速度快得多。
-#
-# 本地手动构建镜像时，先自行准备二进制：
-#   cd web && npm run build:static && cd ..
-#   cp -r web/out server/webui/dist
-#   CGO_ENABLED=0 GOARCH=amd64 go build -tags embedui -o dist/amd64/artex ./cmd/artex
-#   docker build -t artex:local .
-FROM python:3.12-slim-bookworm
+# 多阶段构建：前端静态导出 → Go 单二进制（内嵌前端）→ 运行镜像。
+# 原 Docker Hub 镜像源（autumn27/artex）已失效，本仓库自此支持从纯源码自助构建：
+#   docker compose build        # 或 docker build -t artex:local .
+# TARGETARCH 由 buildx 自动注入（amd64/arm64），Go 交叉编译无需 QEMU；
+# 运行层只装工具，编译全部在构建阶段完成。
+# 国内网络可覆盖模块源（默认已对国内友好）：
+#   --build-arg GOPROXY=https://goproxy.cn,direct
+#   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+
+########## 阶段 1：前端静态导出 ##########
+FROM node:20-bookworm AS web
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+WORKDIR /web
+# --ignore-scripts：跳过 prepare(husky)——容器里没有 .git，husky 会失败；
+# Next.js/Biome 的平台二进制走 optionalDependencies，不依赖生命周期脚本。
+COPY web/package.json web/package-lock.json ./
+RUN npm config set registry "$NPM_REGISTRY" && npm ci --ignore-scripts
+COPY web/ ./
+RUN NEXT_EXPORT=1 npm run build:static
+
+########## 阶段 2：Go 后端（内嵌前端，静态编译）##########
+FROM golang:1.26-bookworm AS gobuild
 ARG TARGETARCH
+ARG GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# 前端静态产物从 web 阶段拷入（.dockerignore 已排除宿主 dist，不会冲突）
+COPY --from=web /web/out/ server/webui/dist/
+RUN CGO_ENABLED=0 GOARCH="${TARGETARCH}" go build -tags embedui -trimpath -o /out/artex ./cmd/artex
+
+########## 阶段 3：运行镜像（同原版：工具 + Playwright 预装）##########
+FROM python:3.12-slim-bookworm
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+# 运行层的全局 npm 装包与 chromium 下载同样走国内源（对全球网络同样可达）
+ENV npm_config_registry=$NPM_REGISTRY \
+    PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
 # 常用工具：ripgrep / curl / vim，加一批 recon 常备件（按需增删）。
 # Node 从 NodeSource 装 20.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,8 +56,8 @@ RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@late
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-# 预编译好的对应架构二进制（dist/amd64/artex 或 dist/arm64/artex）
-COPY dist/${TARGETARCH}/artex /app/artex
+# 构建阶段产出的单二进制（内嵌前端）
+COPY --from=gobuild /out/artex /app/artex
 # 守护启动脚本：进程退出后按退出码决定是否重新拉起，页面一键更新靠它完成换装。
 # 它同时负责把 SIGTERM 转发给 artex —— docker stop 只把信号发给 PID 1，
 # 不转发的话 artex 收不到、做不了优雅关闭，10 秒后被 SIGKILL 硬杀。
