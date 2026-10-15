@@ -232,6 +232,9 @@ func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 			log.Printf("[tools] seed %s 失败: %v", t.Name(), err)
 		}
 	}
+	// Seed the imported CyberStrikeAI tool recipes: kind=command custom tools,
+	// deferred + unbound (bind per agent in the tool page). First-insert only.
+	seedCSITools(pg)
 	// bashInteractiveShellNote is appended to Bash's description ONLY for agents whose
 	// interactive_shell is on, so Bash points at shell_open for interactive programs
 	// without ever referencing a tool that isn't injected (§14.1/§14.2).

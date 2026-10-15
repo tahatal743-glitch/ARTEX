@@ -169,6 +169,30 @@ VALUES ($1, false, $2, $3, $4, $5, $6, $7, $8)`,
 	return err
 }
 
+// SeedCustomTool inserts a code-defined custom tool (system=false) ONCE — used
+// by the imported CyberStrikeAI tool recipes. ON CONFLICT DO NOTHING: a row the
+// user has edited, or a user-created tool with the same key, is never touched.
+func (d *DB) SeedCustomTool(t *Tool) error {
+	schema := t.Schema
+	if len(schema) == 0 {
+		schema = json.RawMessage("{}")
+	}
+	exec := t.Exec
+	if len(exec) == 0 {
+		exec = json.RawMessage("{}")
+	}
+	agents, _ := json.Marshal(t.Agents)
+	if len(agents) == 0 {
+		agents = json.RawMessage("[]")
+	}
+	_, err := d.Exec(`
+INSERT INTO tools(key, system, description, schema, agents, enabled, kind, exec, deferred)
+VALUES ($1, false, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (key) DO NOTHING`,
+		t.Key, t.Description, schema, agents, t.Enabled, t.Kind, exec, t.Deferred)
+	return err
+}
+
 // UpdateCustomTool updates a custom tool's editable fields (kind/exec/deferred +
 // desc/schema/agents/enabled). Only touches system=false rows.
 func (d *DB) UpdateCustomTool(t *Tool) error {

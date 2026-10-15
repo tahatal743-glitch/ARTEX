@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### 工具
+
+#### 新增的功能
+
+- **移植 CyberStrikeAI 的 88 条工具配方（P0.1）**：把 CSI `tools/*.yaml` 的实战配方（命令 + 固定参数 + flag/positional/布尔/模板参数 + 额外参数拼装）转换成 ARTEX 的 `kind=command` 自定义工具，启动时播种进 `tools` 表：`system=false`、`enabled=true`、`deferred=true`、**默认不绑定任何 agent**（在工具页按 agent 绑定后生效，schema 走 SearchExtraTools/ExecuteExtraTool 按需披露）。转换器与报告在 `F:\Claude_Code\artex-port\tools-import\`。
+- **`kind=command` 支持 CSI 式参数拼装**：`exec` 新增 `args`（固定参数）、`params`（参数声明：flag/positional/combined/template、bool 真假语义、默认值、必填校验）、`args_replace_param`（如 nmap 的 scan_type 整段替换默认参数）。拼装出的 argv **逐元素**做 shell 引号后交给 Bash 底层执行，继承拦截规则/超时/输出溢出。旧的「单条命令模板」写法完全兼容（`args`/`params` 都为空时走原路径）。
+- 移植来源：CyberStrikeAI `internal/security/executor.go` 的 `buildCommandArgs` / `formatParamValue` / `parseAdditionalArgs`（Apache-2.0）。
+
+#### 设计说明
+
+- **逐元素引号**：argv 每个元素单独单引号包裹再拼成命令行，值里的空格、分号、`$(...)` 都不可能变成 shell 语法；template 类参数（如 `-T{value}`）在替换后按空格切分，保留 CSI「一段模板出多个 token」的语义（scan_type 传 `-sU -Pn` 即整段替换）。
+- **默认不绑定 + deferred**：88 条一次性全绑会把上下文灌爆；不绑定时工具完全不可见，绑定后 schema 也按需披露。
+- **跳过 3 条**：`exec`（等价于 Bash）、`execute-python-script`、`install-python-package`（ARTEX 有 script kind 与 Bash，重复）。
+- **sqlmap 覆盖**：CSI 配方指向它自带的 Windows python 副本（`F:/CyberStrikeAI/.tools/sqlmap/sqlmap.py`），已改写为系统 `sqlmap`（WSL Kali 自带）。
+- **验收**：单元测试 10 个（nmap 默认参数、scan_type 替换、布尔真假、additional_args 切分、必填校验、子命令 position 0、位置序、引号安全、真实配方解析）；真机让 mainagent 用 nmap 扫 127.0.0.1 的 22/80 端口，返回真实扫描报告（`-p 22,80` 生效，22/tcp、80/tcp 均为 closed）。
+
+## [0.3.20] - 2026-10-14
 ### 拦截
 
 #### 新增的功能

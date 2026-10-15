@@ -215,9 +215,34 @@ func (s *Server) seedPythonInterpreter() {
 
 // ---------- exec 规格 ----------
 
+// cmdParam is one declared parameter of a kind=command tool, mirroring
+// CyberStrikeAI's ParameterConfig (config.go:1609): the argv builder in
+// cmdtool_argv.go turns these plus the model-supplied values into an argv slice.
+type cmdParam struct {
+	Name     string   `json:"name"`
+	Type     string   `json:"type"`     // string | int | bool | array | object
+	Flag     string   `json:"flag"`     // -p / --script / -u ...
+	Position *int     `json:"position"` // positional slot, 0 = subcommand (before flags)
+	Format   string   `json:"format"`   // flag | combined | template | positional
+	Template string   `json:"template"` // e.g. -T{value}; split on spaces after expansion
+	Default  any      `json:"default"`
+	Required bool     `json:"required"`
+	Options  []string `json:"options"`
+	ItemType string   `json:"item_type"` // element type when Type=array
+}
+
 type commandExec struct {
-	Command   string `json:"command"`
-	TimeoutMs int    `json:"timeout_ms"`
+	Command string `json:"command"`
+	// Args are fixed leading arguments (CSI's ToolConfig.Args).
+	Args []string `json:"args"`
+	// Params drives argv construction (CSI's ParameterConfig list). When either
+	// Args or Params is present, the command is built as argv (cmdtool_argv.go);
+	// otherwise Command is treated as a {param} template string, as before.
+	Params []cmdParam `json:"params"`
+	// ArgsReplaceParam names a param that, when supplied, replaces the fixed Args
+	// (CSI hardcodes this for nmap's scan_type; here it is data-driven).
+	ArgsReplaceParam string `json:"args_replace_param"`
+	TimeoutMs        int    `json:"timeout_ms"`
 }
 type scriptExec struct {
 	Code      string `json:"code"`
@@ -334,7 +359,16 @@ func (s *Server) runCommandTool(ctx context.Context, execRaw json.RawMessage, pa
 	if strings.TrimSpace(spec.Command) == "" {
 		return actool.Errorf("command 为空"), nil
 	}
-	cmd := renderTemplate(spec.Command, params, shellQuote)
+	var cmd string
+	if len(spec.Params) > 0 || len(spec.Args) > 0 {
+		argv, err := buildToolArgv(spec, params)
+		if err != nil {
+			return actool.Errorf(err.Error()), nil
+		}
+		cmd = shellJoin(argv)
+	} else {
+		cmd = renderTemplate(spec.Command, params, shellQuote)
+	}
 	// 复用 Bash 也在用的底层 run(经 Bash CoreTool.Call):自动继承安全 floor/超时/
 	// 代理 env/输出溢出。工具与 Bash 平级、共用底层,不经过 Bash 这个工具让模型调。
 	bashIn, _ := json.Marshal(map[string]any{"command": cmd})
