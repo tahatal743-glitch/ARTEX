@@ -845,6 +845,12 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		if open, err := t.Store.HasOpenGoal(); err == nil && !open {
 			t.drainTriggers() // 丢弃累积的 done/finding 触发，避免 goalless 长会话里无界增长
 			if active, err := t.Store.HasActiveIntent(); err == nil && !active {
+				// 证据门(agentfinalizer 移植,见 goal_evidence.go):goalless 分支也要有证据
+				// 才收官。不过则缺证据的 met 目标已退回 open、hint 已写、planner 已唤醒,
+				// 任务继续而不是落 done。
+				if !e.enforceGoalEvidence(t, "goalless") {
+					return
+				}
 				// frontier 抽干且无在跑意图 → 收尾。用 Guarded 版做 CAS，避免踩到并发的
 				// pause/delete/超时收尾的状态转换。
 				if won, err := e.m.SetTaskStatusGuarded(t.ID, "done"); err != nil {
@@ -884,6 +890,11 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 			log.Printf("[planner] task %s 规划出错: %v", t.ID, err)
 		case met:
 			log.Printf("[planner] task %s 判定目标达成: %s", t.ID, reason)
+			// 证据门(agentfinalizer 移植,见 goal_evidence.go):met 只是候选,每个目标都有
+			// proves 证据边才允许落 done;不过则缺证据目标退回 open、写 hint、唤醒下一轮。
+			if !e.enforceGoalEvidence(t, "planner") {
+				break
+			}
 			// 所有目标达成 → 持久化任务状态为 done（前端 DTO 会优先展示该终态）。
 			if err := e.m.SetTaskStatus(t.ID, "done"); err != nil {
 				log.Printf("[planner] task %s 标记完成落库失败: %v", t.ID, err)

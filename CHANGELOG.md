@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### 任务收官
+
+#### 新增的功能
+
+- **移植 CyberStrikeAI 的 agentfinalizer「证据门」（P1.4）**：任务的「达成」不再由自然语言结论直接定稿——落 `done` 前校验每个目标都 state='met' 且都有 `proves` 证据边指向仍存在的 fact/finding 节点。堵住 `goal_met` 的免证据旁路（`agent/tools.go`）：目标未 met、或已 met 目标缺证据边时，工具直接拒绝并把缺口列给模型，引导改用 `prove_goal` 逐个证明；`prove_goal` 的「全部目标已 met → 自动收官」同样复核。
+- **三处落 done 的路径统一过门**（`server/goal_evidence.go` 的 `enforceGoalEvidence`）：planner 判 met（`server/engine.go`）、goalless 分支前沿抽干（`server/engine.go`）、超时收尾终局判定（`server/engine_timeout.go`）。不过门时：缺证据的 met 目标**退回 open**、写一条 system 来源的 hint、发活动记录并唤醒 planner——任务继续，而不是带着无证据的结论收场；超时收尾处诚实降级为 `timeout`。
+- **开关 `goal_evidence_gate`**（`GET/PUT /api/settings`），**默认开启**；置 `false` 完全恢复旧行为。每次收官即时读取，无需重启或重建 agent。
+
+#### 设计说明
+
+- **证据 = 图上的边**：ARTEX 的探索图天然就是这份证据链——`prove_goal` 写入的 `proves` 边（finding/fact → goal）。证据节点被删除时边随外键级联消失，目标自动落回「缺证据」，无从蒙混。
+- **只增不减**：证据门只拦「收官」，不碰探索、不删任何节点；被退回 open 的目标保留全部状态与历史。
+- **fail-closed**：校验查询本身失败（DB 侧）时拒绝本次收官，下一轮心跳重试。
+- **两层互补**：工具层给模型即时反馈（改道 `prove_goal`）；落点层兜住所有收官路径（含模型之外的路径）。移植来源：CyberStrikeAI `internal/agentfinalizer/decision.go`（`Decide`/`hasCompletedEvidence`，Apache-2.0）与 `internal/handler/finalization_auto_continue.go`（缺证据不收敛、让 agent 继续跑）。
+
 ### 工具
 
 #### 新增的功能

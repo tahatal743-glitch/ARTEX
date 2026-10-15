@@ -495,6 +495,7 @@ func (s *Server) seedOrchestrationTools() {
 	s.seedWorkerReadbackRebind()  // 修复旧迁移误删：把 search_all_worker_traces/get_worker_trace/node_detail 补绑回 worker(一次性)
 	s.seedAutoReportFindingBinding()
 	s.unbindGoalMetDefault()
+	s.refreshGoalMetEvidenceDesc()    // goal_met 描述补「证据门」说明 → 旧库刷新一次(一次性)
 	s.reseedGoalsPrompt()             // goals 提示词加入「抽操作约束」步 → 旧库追加一版新默认(一次性)
 	s.reseedMainAgentPrompt()         // mainagent 提示词加入「目标达成后 add_intent 反问是否建目标」(一次性)
 	s.reseedPlannerPrompt()           // planner 提示词:重写「0 意图」正当理由 + 加量化验收核对(一次性)
@@ -562,6 +563,28 @@ func (s *Server) unbindGoalMetDefault() {
 		return
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
+}
+
+// refreshGoalMetEvidenceDesc 把旧库 goal_met 的描述刷成含「证据门」的新默认(一次性)。
+// SeedTool 是首插入 only;本轮描述新增了「会被证据门拒绝」的说明,不刷新旧库的模型就
+// 不知道这条规则。RefreshToolDefaults 只改 desc/schema,保留绑定与开关。
+func (s *Server) refreshGoalMetEvidenceDesc() {
+	const flag = "tool_schema_refresh_v8_goal_evidence"
+	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
+		return
+	}
+	for _, sd := range agent.BuiltinToolSeeds() {
+		if sd.Key != "goal_met" {
+			continue
+		}
+		schema, _ := json.Marshal(sd.Schema)
+		if err := s.m.pg.RefreshToolDefaults(sd.Key, sd.Desc, schema); err != nil {
+			log.Printf("[tools] refresh %s desc failed: %v", sd.Key, err)
+			return
+		}
+	}
+	_ = s.m.pg.SetSetting(flag, "true")
+	log.Printf("[tools] 已刷新 goal_met 描述(证据门,一次性)")
 }
 
 // reseedGoalsPrompt 把 goals 目标拆解器的提示词刷成【当前代码默认】——因为默认正文新增了

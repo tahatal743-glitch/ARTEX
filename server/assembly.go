@@ -211,6 +211,9 @@ func seedPrompts(pg *db.DB) {
 // and缺省入参 get injected. MCP/skill/host tools have no row and pass through.
 func wireTools(pg *db.DB, domainReg map[string]actool.CoreTool) {
 	agent.FindingTrafficBindingEnabled = func() bool { return pg.GetBool(settingAgentTrafficBinding, false) }
+	// 收官证据门(agentfinalizer 移植,见 server/goal_evidence.go):默认开,无证据不许
+	// 收官;置 false 完全恢复旧行为。每次收官即时读取,改设置无需重启或重建 agent。
+	agent.GoalEvidenceGateEnabled = func() bool { return pg.GetBool(settingGoalEvidenceGate, true) }
 	// Seed the built-in domain tools (first-insert only; DO NOTHING preserves edits).
 	// No startup prune: rows we didn't seed are left alone so future user-defined
 	// custom tools (system=false, added via the UI) survive restarts.

@@ -209,6 +209,12 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 	}
 	defer e.decInflight(t.ID)
 
+	// 证据门(agentfinalizer 移植,见 goal_evidence.go):终局判 met 也要每个目标都有
+	// proves 证据边才允许 done;不过则按超时收尾——任务已到时限,不再回退重跑,诚实降级。
+	if met && !e.enforceGoalEvidence(t, "timeout") {
+		met = false
+	}
+
 	// ⑥ 定终态(带守卫):met → done(completed);否则 timeout。若常规路径已先落 done,
 	// 守卫(SetTaskStatusGuarded)会拒绝覆盖,保留 completed 语义。
 	status := "timeout"

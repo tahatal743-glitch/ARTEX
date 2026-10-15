@@ -1193,6 +1193,16 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 					}
 				}
 				if allMet {
+					// 证据门(agentfinalizer 移植,见 goal_evidence.go):自动收官同样要求每个
+					// 目标都有 proves 证据边——本次 prove_goal 的证据已入库,但更早 met 的目标
+					// 可能缺边(证据节点被删/历史库)。缺边就不自动收官,让 planner 下一轮补齐。
+					if GoalEvidenceGateOn() {
+						if _, unproven, uerr := t.ts.GoalEvidenceGap(); uerr != nil {
+							return actool.Text(fmt.Sprintf("goal %d marked met；证据门校验失败(%v)，本轮未自动判定任务完成，将在下一轮复核", goal, uerr)), nil
+						} else if len(unproven) > 0 {
+							return actool.Text(fmt.Sprintf("goal %d marked met；但 %s 缺少 proves 证据边，暂不自动收官——请先为这些目标补上证据（prove_goal）", goal, goalRefsOf(unproven))), nil
+						}
+					}
 					t.GoalMet = true
 					t.Reason = fmt.Sprintf("所有 %d 个目标均已 met（最后由 goal %d 触发）", len(goals), goal)
 					return actool.Text(fmt.Sprintf("goal %d marked met；本任务所有目标均已达成，任务自动判定完成", goal)), nil
@@ -1203,11 +1213,23 @@ func (t *ToolSet) proveGoal() actool.CoreTool {
 }
 
 func (t *ToolSet) goalMet() actool.CoreTool {
-	return writeTool("goal_met", "【立即结束整个任务】——仅当你确认任务的【全部目标都已真正达成、整体收官】时才调（注意是任务【整体】完成；仅仅达成了其中某一个目标/某一个 flag/某一个漏洞【不算】——那种情况用 prove_goal 标记该目标即可）。⚠️它不是用来“结束本轮规划”的：本轮没有新意图要派、或在等 worker 产出，都【直接结束本轮即可，不要调本工具】（0 个意图是完全正常的）。正常判定优先用 prove_goal 逐个证明目标；goal_met 只是绕过逐个证明、直接从全局收官的手段。",
+	return writeTool("goal_met", "【立即结束整个任务】——仅当你确认任务的【全部目标都已真正达成、整体收官】时才调（注意是任务【整体】完成；仅仅达成了其中某一个目标/某一个 flag/某一个漏洞【不算】——那种情况用 prove_goal 标记该目标即可）。⚠️它不是用来“结束本轮规划”的：本轮没有新意图要派、或在等 worker 产出，都【直接结束本轮即可，不要调本工具】（0 个意图是完全正常的）。正常判定优先用 prove_goal 逐个证明目标；goal_met 只是绕过逐个证明、直接从全局收官的手段。⚠️系统证据门：若仍有目标处于 open、或已 met 的目标缺少 proves 证据边，本调用会被拒绝并返回原因——届时请改用 prove_goal(goal_id, evidence_id) 逐个以真实证据证明。",
 		obj(map[string]any{"reason": str("达成理由（必须是目标真正达成的证据，不能是“本轮无新方向”这类结束本轮的理由）")}, "reason"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct{ Reason string }
 			_ = json.Unmarshal(in, &a)
+			// 证据门(agentfinalizer 移植,见 goal_evidence.go):收官前校验每个目标都已 met
+			// 且有 proves 证据边。ts 为空 = 不在任务上下文里跑,GoalMet 不会被任何收官路径
+			// 读取,按旧行为放行。
+			if t.ts != nil && GoalEvidenceGateOn() {
+				msg, err := goalEvidenceGapMessage(t.ts)
+				if err != nil {
+					return actool.Errorf(fmt.Sprintf("证据门校验失败(%v)；请稍后重试，或改用 prove_goal 逐个证明目标。", err)), nil
+				}
+				if msg != "" {
+					return actool.Errorf(msg), nil
+				}
+			}
 			t.GoalMet = true
 			t.Reason = a.Reason
 			return actool.Text("acknowledged: goal marked met"), nil

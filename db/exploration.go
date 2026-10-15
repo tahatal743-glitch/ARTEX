@@ -1169,6 +1169,64 @@ WHERE exploration_id=$1 AND kind='goal' AND state='open')`, s.expID).Scan(&exist
 	return exists, err
 }
 
+// GoalText 取目标节点 payload 里的 text(截到 80 字),用于证据门/活动流这类面向人的
+// 短说明;取不到返回空串。
+func GoalText(n *Node) string {
+	if n == nil {
+		return ""
+	}
+	var p struct {
+		Text string `json:"text"`
+	}
+	_ = json.Unmarshal(n.Payload, &p)
+	t := strings.TrimSpace(p.Text)
+	if r := []rune(t); len(r) > 80 {
+		t = string(r[:80]) + "…"
+	}
+	return t
+}
+
+// GoalEvidenceGap 是收官证据门的数据层(见 agent/goal_evidence.go 与
+// server/goal_evidence.go):返回
+//  1. openGoals —— 仍未达成(state='open')的目标;
+//  2. unproven  —— state='met' 却没有任何 proves 证据边的目标。
+//
+// proves 边的源节点必须是仍存在的 fact/finding(KindFact/KindFinding):证据节点被
+// 删掉时边随外键级联消失,目标就会落进 unproven。边按本探索过滤,源节点只按 id
+// 查——prove_goal 允许引用【直接关联任务】的证据节点,那种边的 src 在别的探索里、
+// 边写在本探索。两者都空 = 证据门通过(无目标,或全部 met 且有证据)。
+// 只读,不改状态;"met 退回 open"之类的修复留给调用方。
+func (s *ExplorationStore) GoalEvidenceGap() (openGoals, unproven []*Node, err error) {
+	rows, err := s.db.Query(`SELECT `+nodeCols+` FROM exploration_nodes
+WHERE exploration_id=$1 AND kind='goal' AND state='open' ORDER BY id`, s.expID)
+	if err != nil {
+		return nil, nil, err
+	}
+	openGoals, err = scanNodes(rows)
+	rows.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err = s.db.Query(`SELECT `+nodeCols+` FROM exploration_nodes g
+WHERE g.exploration_id=$1 AND g.kind='goal' AND g.state='met'
+  AND NOT EXISTS (
+    SELECT 1 FROM exploration_edges e
+    JOIN exploration_nodes src ON src.id = e.src_id
+    WHERE e.exploration_id=$1 AND e.dst_id=g.id AND e.rel='proves'
+      AND src.kind IN ('fact','finding')
+  )
+ORDER BY g.id`, s.expID)
+	if err != nil {
+		return nil, nil, err
+	}
+	unproven, err = scanNodes(rows)
+	rows.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	return openGoals, unproven, nil
+}
+
 // ClaimIntent atomically moves an open intent to running. Returns true if claimed.
 func (s *ExplorationStore) ClaimIntent(id int64, owner string) (bool, error) {
 	res, err := s.db.Exec(`UPDATE exploration_nodes SET state='running', owner=$1
