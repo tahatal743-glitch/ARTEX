@@ -62,6 +62,27 @@ func TestBuildToolArgvBoolAndTemplate(t *testing.T) {
 	}
 }
 
+// Numeric parameters arrive as JSON numbers (float64). Go's %v switches to
+// exponent notation at 1e6 ("1e+06"), which no tool accepts — masscan rates are
+// routinely quoted in the millions.
+func TestBuildToolArgvNumericParamHasNoExponent(t *testing.T) {
+	spec := commandExec{
+		Command: "masscan",
+		Params: []cmdParam{
+			{Name: "rate", Type: "integer", Flag: "--rate", Format: "flag"},
+			{Name: "target", Type: "string", Position: intp(1), Format: "positional", Required: true},
+		},
+	}
+	argv, err := buildToolArgv(spec, map[string]any{"rate": float64(1000000), "target": "10.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "masscan --rate 1000000 10.0.0.1"
+	if got := strings.Join(argv, " "); got != want {
+		t.Fatalf("argv = %q, want %q", got, want)
+	}
+}
+
 func TestBuildToolArgvAdditionalArgsAreSplitAndLast(t *testing.T) {
 	argv, err := buildToolArgv(nmapSpec(), map[string]any{
 		"target": "10.0.0.1", "additional_args": `--max-retries 3 -Pn "a b"`,

@@ -20,6 +20,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -190,6 +191,13 @@ func formatParamValue(p cmdParam, v any) string {
 		}
 	}
 	out := fmt.Sprintf("%v", v)
+	// JSON numbers arrive as float64, and %v switches to exponent notation at 1e6
+	// and above ("1e+06") — masscan rates are routinely quoted in the millions, so
+	// render integral floats in plain decimal. Only values that would otherwise
+	// print with an exponent change.
+	if f, ok := v.(float64); ok {
+		out = strconv.FormatFloat(f, 'f', -1, 64)
+	}
 	if p.Name == "ports" {
 		out = strings.ReplaceAll(out, " ", "")
 	}
