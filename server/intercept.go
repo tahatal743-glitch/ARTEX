@@ -388,7 +388,10 @@ func (s *Server) interceptGetToolConfig(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, map[string]any{"enabled_tools": tools})
+	writeJSON(w, 200, map[string]any{
+		"enabled_tools": tools,
+		"decode_guard":  s.m.interceptor.DecodeGuard(),
+	})
 }
 
 // interceptSetToolConfig replaces the list of tool names that should enter
@@ -396,6 +399,9 @@ func (s *Server) interceptGetToolConfig(w http.ResponseWriter, r *http.Request) 
 func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		EnabledTools []string `json:"enabled_tools"`
+		// Optional: absent means "leave the switch as it is", so an older
+		// frontend that only sends enabled_tools does not reset it.
+		DecodeGuard *bool `json:"decode_guard"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -407,6 +413,12 @@ func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) 
 	if err := s.m.interceptor.SetEnabledTools(req.EnabledTools); err != nil {
 		writeErr(w, 500, err.Error())
 		return
+	}
+	if req.DecodeGuard != nil {
+		if err := s.m.interceptor.SetDecodeGuard(*req.DecodeGuard); err != nil {
+			writeErr(w, 500, err.Error())
+			return
+		}
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }

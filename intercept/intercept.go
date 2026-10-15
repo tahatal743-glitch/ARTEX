@@ -127,6 +127,7 @@ type Interceptor struct {
 	mu           sync.RWMutex
 	cached       []compiledRule  // sorted by priority DESC; nil means not loaded yet
 	enabledTools map[string]bool // nil means not loaded yet
+	decodeGuard  bool            // match decoded input variants too; loaded with the rule cache
 	pending      *pendingManager
 	reviewer     Reviewer // nil = LLM fallback judge not wired
 }
@@ -204,6 +205,7 @@ func (i *Interceptor) loadLocked() error {
 			i.enabledTools = m
 		}
 	}
+	i.decodeGuard = i.db.GetBool(settingDecodeGuard, true)
 	return nil
 }
 
@@ -309,6 +311,11 @@ const (
 	settingJudgeAskTimeoutSecs   = "llm_judge_ask_timeout_seconds"
 	settingJudgeAskTimeoutAction = "llm_judge_ask_timeout_action"
 )
+
+// settingDecodeGuard toggles the decoded-input matching pass (decode.go).
+// Unset means on: the pass only widens the existing rules, and it can be turned
+// off to restore the exact pre-port behaviour.
+const settingDecodeGuard = "intercept_decode_guard"
 
 // Judge default values.
 const (
@@ -510,8 +517,15 @@ func (i *Interceptor) Match(toolName string, input []byte) (Decision, bool) {
 	if err != nil || len(rules) == 0 {
 		return Decision{}, false
 	}
+	// Rules are matched against the raw text and its decoded variants, so an
+	// encoded target cannot slip past a rule that names it in plain text (see
+	// decode.go).
+	names, inputs := []string{toolName}, []string{string(input)}
+	if i.decodeGuardOn() {
+		names, inputs = candidateTexts(toolName), candidateTexts(string(input))
+	}
 	for _, r := range rules {
-		if ruleMatches(r, toolName, input) {
+		if ruleMatches(r, names, inputs) {
 			msg := r.Message
 			if msg == "" {
 				msg = defaultMessage(r.Action, r.Name)
@@ -531,20 +545,67 @@ func (i *Interceptor) Match(toolName string, input []byte) (Decision, bool) {
 	return Decision{}, false
 }
 
-func ruleMatches(r compiledRule, toolName string, input []byte) bool {
-	var subject string
+// ruleMatches reports whether any subject text satisfies the rule. names and
+// inputs are the raw text followed by its decoded variants (decode.go); a
+// single-element slice is the pre-decoding behaviour.
+func ruleMatches(r compiledRule, names, inputs []string) bool {
+	var subjects []string
 	switch r.MatchTarget {
 	case "tool_name":
-		subject = toolName
+		subjects = names
 	case "tool_input":
-		subject = string(input)
+		subjects = inputs
 	default:
 		return false
 	}
-	if r.MatchType == "regex" {
-		return r.re != nil && r.re.MatchString(subject)
+	for _, subject := range subjects {
+		if r.MatchType == "regex" {
+			if r.re != nil && r.re.MatchString(subject) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(subject, r.Pattern) {
+			return true
+		}
 	}
-	return strings.Contains(subject, r.Pattern)
+	return false
+}
+
+// decodeGuardOn reports whether rules are matched against decoded variants of
+// the tool call in addition to the raw text. The value is loaded together with
+// the rule cache; Invalidate forces a re-read after a settings change.
+func (i *Interceptor) decodeGuardOn() bool {
+	i.mu.RLock()
+	if i.cached != nil {
+		v := i.decodeGuard
+		i.mu.RUnlock()
+		return v
+	}
+	i.mu.RUnlock()
+
+	// Same double-checked lazy load as rules(): the switch lives with the rule
+	// cache, so the accessor must not report the zero value before any rule has
+	// been evaluated.
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.cached == nil {
+		_ = i.loadLocked()
+	}
+	return i.decodeGuard
+}
+
+// DecodeGuard exposes the decoded-input matching switch to the API/UI.
+func (i *Interceptor) DecodeGuard() bool { return i.decodeGuardOn() }
+
+// SetDecodeGuard persists the decoded-input matching switch and reloads the rule
+// cache so the change takes effect on the next tool call.
+func (i *Interceptor) SetDecodeGuard(on bool) error {
+	if err := i.db.SetBool(settingDecodeGuard, on); err != nil {
+		return err
+	}
+	i.Invalidate()
+	return nil
 }
 
 func defaultMessage(action, name string) string {

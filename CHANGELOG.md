@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+### 拦截
+
+#### 新增的功能
+
+- **规则匹配前先解码（移植 CyberStrikeAI `toolguard` 的「解码后再匹配」）**：拦截规则原先只对着 `tool_input` 的原始 JSON 求值，因此把目标写成 `%67ov.cn`、`\x67ov.cn`、`%u0067ov.cn` 或一段 base64，就能绕过逐字写死 `gov.cn` 的规则。现在每条规则对着**原文本 + 全部解码变体**求值：百分号转义（含嵌套，最多三轮）、`\xNN`、`%uNNNN` 与 `\uNNNN`（含代理对）、以及 base64 载荷。JSON 走查保留——`tool_input` 的每个字符串值与键各算一个候选，所以被 JSON 转义藏起来的目标同样可见。
+- **开关 `intercept_decode_guard`**（`GET/PUT /api/intercept/tool-config` 的 `decode_guard` 字段），**默认开启**；置 `false` 即完全恢复移植前的行为（只有原文本一个候选）。PUT 不带该字段时保持原值，旧前端不受影响。
+
+#### 设计说明
+
+- **只增不减**：原文本永远是第一个候选，所以移植不会让任何原本命中的规则失效。
+- **有上限**：候选数 256、解码轮数 3、单次 base64 令牌 32 个且单个不超过 8 KB —— 这段代码在每次工具调用时都会跑。
+- **base64 只认可打印文本**：解码结果必须是合法 UTF-8 且至少 90% 可打印，否则不作为候选，免得把哈希、十六进制 ID 这类东西变成噪音。
+- **开关与规则缓存同源**：`DecodeGuard()` 与 `rules()` 用同一套双重检查懒加载；否则在发生任何工具调用之前读到的是零值，API 会显示 `false` 而实际匹配是开着的。
+- **移植来源**：CyberStrikeAI `internal/toolguard/toolguard.go`（Apache-2.0）的 `candidateTexts` / `decodePercentEscapes` / `hexValue`；`\xNN`、`%uNNNN`、base64 三类是本项目在其之上补的。
+- **验收（公司机实测，A/B/C/D 对照）**：旧二进制上，agent 用 `Write` 写入含 `m%6Bfs` 的内容**未被拦截**（文件被创建）；换装后同一输入被既有规则「磁盘格式化类 mkfs」`\bmkfs\b` 判 `denied`；把 `decode_guard` 置 `false` 后不再拦截，置回 `true` 后再次拦截。
+
 ## [0.3.20] - 2026-10-14
 
 ### 前端
