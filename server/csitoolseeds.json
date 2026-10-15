@@ -3187,7 +3187,7 @@
     ]
    },
    "exec": {
-    "command": "httpx.exe",
+    "command": "httpx",
     "args": [
      "-no-stdin",
      "-no-fallback",
