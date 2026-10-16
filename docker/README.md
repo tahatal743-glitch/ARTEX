@@ -30,7 +30,7 @@ docker pull ghcr.io/tahatal743-glitch/artex:latest
 
 - 多架构 manifest（linux/amd64 + linux/arm64），`docker pull` 按本机架构自动选择。
 - 与 Release zip 同源：二进制取自同一次 tag 构建的 Linux 产物；工具层与路线 A/B 完全一致。
-- **tag 发版后镜像还需要 20~40 分钟构建**（工具层含 Rust 现编），稍等再拉。
+- **tag 发版后镜像还需要约 15~25 分钟构建**（实测含冷构建约 15 分钟，视缓存；工具层含 Rust 现编），稍等再拉。
 - 起容器沿用既有 compose，把 `image:` 换成 `ghcr.io/tahatal743-glitch/artex:<版本>` 即可；
   固定版本用具体 tag，自动跟随用 `latest`。
 - 包页面：`https://github.com/tahatal743-glitch/ARTEX/pkgs/container/artex`

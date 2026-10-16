@@ -115,6 +115,11 @@ for x in d.get("assets",[]):
     *) curl -fsSL --max-time 300 -o /tmp/arti.tgz "$url" && { tar xzf /tmp/arti.tgz -C /tmp/arti 2>/dev/null || tar xjf /tmp/arti.tgz -C /tmp/arti 2>/dev/null || tar xJf /tmp/arti.tgz -C /tmp/arti 2>/dev/null; } ;;
   esac
   f=$(find /tmp/arti -type f -name "$inner" | head -1)
+  if [ -z "$f" ]; then
+    # 有的资产是「tar.gz 套在 zip 里」（如 rustscan 的 x86_64 包），再解一层 tar.gz
+    find /tmp/arti -type f -name '*.tar.gz' -exec tar xzf {} -C /tmp/arti \; 2>/dev/null
+    f=$(find /tmp/arti -type f -name "$inner" | head -1)
+  fi
   if [ -n "$f" ]; then install -m 0755 "$f" "/usr/local/bin/$b" && note_ok "$b" || note_bad "$b(安装失败)"; else note_bad "$b(包内未找到 $inner)"; fi
 }
 gh_bin ffuf/ffuf ffuf

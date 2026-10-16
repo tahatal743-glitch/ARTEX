@@ -7,7 +7,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 🌐 **在线 Demo（模拟数据）**： [https://artex-demo.mhtsec.com](https://artex-demo.mhtsec.com)
 
-📦 **本仓库为 ARTEX 的长期维护 fork（上游 `Autumn-27/ARTEX` 已 404）。Release 供本地部署一键更新使用；docker 镜像发布暂停。**
+📦 **本仓库为 ARTEX 的长期维护 fork（上游 `Autumn-27/ARTEX` 已 404）。Release 供本地部署一键更新使用；预构建 Docker 镜像随 tag 发版自动构建并发布到 ghcr.io/tahatal743-glitch/artex（拉取见 `docker/README.md`）。**
 
 </div>
 
