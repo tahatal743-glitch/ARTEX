@@ -2,9 +2,14 @@ name: release
 on:
   push:
     tags: ["v*"]
+  # 手动触发（Actions 页面 → release → Run workflow）：在任意分支/tag 上重建并发布镜像，
+  # 不创建 Release（release job 仅在 tag push 时运行）。
+  # ⚠️ Run workflow 按钮要求本 workflow 文件已存在于默认分支（main）；
+  #    合并到 main 之前手动触发不可用，tag 触发不受影响。
+  workflow_dispatch:
 
 permissions:
-  contents: write # 创建 Release 需要
+  contents: write # 创建 Release 需要（镜像作业另有 job 级 packages: write）
 
 jobs:
   # ① 前端静态导出（一次），产物给交叉编译各平台复用
@@ -69,15 +74,16 @@ jobs:
         with:
           name: pkg-${{ matrix.goos }}-${{ matrix.goarch }}
           path: "dist/*.zip"
-      # Linux 生二进制单独上传，供 docker job 复用（免在镜像里重编前端+Go）
+      # Linux 生二进制单独上传，供 image job 复用（免在镜像里重编前端+Go）
       - if: matrix.goos == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: bin-linux-${{ matrix.goarch }}
           path: dist/artex-linux-${{ matrix.goarch }}/artex
 
-  # ③ 汇总所有 zip → 创建 GitHub Release
+  # ③ 汇总所有 zip → 创建 GitHub Release（仅 tag push；手动触发时跳过）
   release:
+    if: github.ref_type == 'tag' && github.event_name == 'push'
     needs: binaries
     runs-on: ubuntu-latest
     steps:
@@ -96,41 +102,81 @@ jobs:
             dist/SHA256SUMS
           generate_release_notes: true
 
-  # ④ 多架构镜像 → 推 Docker Hub（复用 binaries 编好的 Linux 二进制，
-  #    镜像里只装工具 + 放二进制；arm64 仅需模拟 apt 层，构建快很多）
-  docker:
-    if: false # 本仓无 Docker Hub 凭据，暂停镜像发布（后续改推 ghcr、走拉镜像更新时恢复）
+  # ④ 镜像构建（ghcr）：amd64 / arm64 各在自己的原生 runner 上并行。
+  #    arm64 必须用 arm64 runner——QEMU 模拟下编 Rust 工具（x8/aardwolf）慢到不可用。
+  #    复用 binaries 编好的 Linux 二进制（Dockerfile.runtime 预编译快速路径），镜像内不重编 Go/前端。
+  #    每架构先推暂存 tag（<ref>-amd64 / <ref>-arm64），由 image-merge 合成多架构 manifest。
+  image:
     needs: binaries
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm } # 公开仓 arm64 runner 免费
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120 # 冷构建（含 Rust 现编）约 20-40 分钟，120 为安全上限
+    permissions:
+      contents: read # checkout
+      packages: write # 推 ghcr（用内置 GITHUB_TOKEN，不用 PAT）
     steps:
-      - uses: actions/checkout@v4 # 取 Dockerfile 与 skills/
+      - uses: actions/checkout@v4 # 取 Dockerfile.runtime / docker/ / skills/ / start.sh
+      - name: Compute image tag from ref
+        # 分支名可能含 /（docker tag 非法），统一替换为 -；tag 触发时即 tag 名
+        run: echo "IMG_TAG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@v4
         with:
-          name: bin-linux-amd64
-          path: dist/amd64
-      - uses: actions/download-artifact@v4
-        with:
-          name: bin-linux-arm64
-          path: dist/arm64
-      - uses: docker/setup-qemu-action@v3
+          name: bin-linux-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }} # → dist/<arch>/artex，Dockerfile.runtime 预期路径
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: autumn27/artex
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          file: Dockerfile.runtime # 配套 Dockerfile.runtime.dockerignore 白名单（buildx 自动识别）
+          platforms: linux/${{ matrix.arch }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ghcr.io/tahatal743-glitch/artex:${{ env.IMG_TAG }}-${{ matrix.arch }}
+          # 工具脚本的 GH_TOKEN：只用于提高 GitHub API 限额，走 BuildKit secret，
+          # 不落盘、不进镜像层（Dockerfile 内 --mount=type=secret,id=gh_token）
+          secrets: gh_token=${{ secrets.GITHUB_TOKEN }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/tahatal743-glitch/ARTEX
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # 工具层只在 docker/tool-*.sh / Dockerfile.runtime 变化时失效；gha 缓存按 ref 隔离，
+          # 跨 ref 首次仍可能是冷构建（每次 tag 冷构建 20-40 分钟属预期）
+          cache-from: type=gha,scope=artex-image-${{ matrix.arch }}
+          cache-to: type=gha,scope=artex-image-${{ matrix.arch }},mode=max,ignore-error=true
+          # 单清单输出：多架构 manifest 由 image-merge 手工合成，避免嵌套 attestation 清单
+          provenance: false
+          sbom: false
+
+  # ⑤ 合成多架构 manifest：docker pull 不再区分架构；tag push 时同步 latest
+  image-merge:
+    needs: image
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - name: Compute image tag from ref
+        run: echo "IMG_TAG=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create multi-arch manifest
+        run: |
+          set -eu
+          TAGS=(-t "ghcr.io/tahatal743-glitch/artex:${IMG_TAG}")
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAGS+=(-t "ghcr.io/tahatal743-glitch/artex:latest")
+          fi
+          docker buildx imagetools create "${TAGS[@]}" \
+            "ghcr.io/tahatal743-glitch/artex:${IMG_TAG}-amd64" \
+            "ghcr.io/tahatal743-glitch/artex:${IMG_TAG}-arm64"
+          docker buildx imagetools inspect "ghcr.io/tahatal743-glitch/artex:${IMG_TAG}"
