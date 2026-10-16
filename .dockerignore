@@ -1,5 +1,7 @@
 .git
 **/node_modules
+# 宿主侧为 Dockerfile.runtime 准备的预编译二进制（全源码构建不需要，别灌进构建上下文）
+dist
 web/.next
 web/out
 server/webui/dist

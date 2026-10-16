@@ -99,7 +99,7 @@ jobs:
   # ④ 多架构镜像 → 推 Docker Hub（复用 binaries 编好的 Linux 二进制，
   #    镜像里只装工具 + 放二进制；arm64 仅需模拟 apt 层，构建快很多）
   docker:
-    if: false # 本仓无 Docker Hub 凭据，暂停镜像发布（Mac 拉镜像路线后续改 ghcr 时恢复）
+    if: false # 本仓无 Docker Hub 凭据，暂停镜像发布（后续改推 ghcr、走拉镜像更新时恢复）
     needs: binaries
     runs-on: ubuntu-latest
     steps:

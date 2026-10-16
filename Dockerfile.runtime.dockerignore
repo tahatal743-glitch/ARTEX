@@ -1,0 +1,17 @@
+# Dockerfile.runtime 专用白名单：只放预编译二进制路径需要的输入，排除源码与本地凭据。
+**
+!Dockerfile.runtime
+!start.sh
+!docker/
+!docker/**
+!dist/
+dist/**
+!dist/amd64/
+dist/amd64/**
+!dist/amd64/artex
+!dist/arm64/
+dist/arm64/**
+!dist/arm64/artex
+!skills/
+!skills/**
+**/node_modules

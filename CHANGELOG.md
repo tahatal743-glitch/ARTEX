@@ -4,6 +4,27 @@
 
 ## [Unreleased]
 
+### 构建
+
+#### 新增的功能
+
+- **镜像内置 88 条配方所需的工具层**：`Dockerfile`（全源码多阶段）与新增的 `Dockerfile.runtime`（预编译二进制快速路径）在运行镜像里自动执行 `docker/tool-install.sh`、`docker/tool-fix.sh`、`docker/tool-rust.sh` 三个幂等脚本，一次构建补齐 apt 系统包、pip 工具、GitHub Release 二进制、perl/python 脚本类与 Rust 现编工具（netexec 的 aardwolf 扩展、x8）。新机器部署不再需要逐台手工补装。
+- **新增预编译二进制 runtime 变体 `Dockerfile.runtime`**：吃 Release zip 解出的 `dist/<arch>/artex`，不编译前端与 Go，与全源码构建并存；配套 `Dockerfile.runtime.dockerignore` 白名单与 `docker/README.md` 流程说明（两条路线的取舍、架构支持、构建后自检）。
+- **构建期可用 BuildKit secret 传 GitHub token** 提升工具下载的 API 限额：`--secret id=gh_token,src=<文件>`；不传则匿名（每小时 60 次限流，脚本记录失败但不中断构建）。
+
+#### 设计说明
+
+- 三个脚本按 `ARTEX_TARGET_ARCH`（构建期取 `TARGETARCH`，容器内缺省 `uname -m`）匹配 GitHub 资产名与编译目标，amd64 / arm64 均可构建，Intel 机器无需改脚本。
+- `cryptography` 钉 `42.0.8` + `PyYAML` 源码重建：部分虚拟化 CPU（如 Docker Desktop 在 Apple Silicon 上的虚拟 CPU）上，新版 Rust 扩展与预编译 C 扩展会 `SIGILL`。该钉版对常规 x86_64 环境同样无害，**勿升级 cryptography**。
+- 根 `.dockerignore` 增加 `dist`：`Dockerfile.runtime` 的预编译二进制不进全源码构建的上下文。
+
+#### 修复的问题
+
+- **Playwright 层不再用 `@latest`**：`@latest` 会漂移到镜像站尚未同步的浏览器构建，使 arm64 构建必然失败（镜像站只有 x64 的 cft 包，官方 CDN 在不稳定网络下也拉不动）。现钉 `playwright 1.64.0-alpha-1790635538000` + `@playwright/mcp 0.0.83` + `@playwright/cli 0.1.22`，下载源可用 `--build-arg PLAYWRIGHT_DOWNLOAD_HOST=` 覆盖，失败自动回落官方 CDN；自建浏览器镜像目录的绕法见 `docker/README.md`。
+- **工具脚本补齐构建依赖**：补 `ruby-dev`（wpscan 的原生扩展 yajl-ruby 需要 ruby.h）、`pkg-config` 与 `libssl-dev`（x8 的 Rust 构建需要 openssl 头）。缺任一项，对应工具会静默构建失败。
+- **`hashpump` 改用存活镜像**：原仓 `bwall/HashPump` 已从 GitHub 删除（404 时 git 会转而索要凭据并失败），改用同一份代码的 `miekrr/HashPump`；该仓没有 makefile，按实际情况改为 g++ 直接编译。汇总输出增加 `hashpump -t` 算法自检。
+- **GitHub 直连重试**：克隆与 Release 资产查询各加最多 3 次重试（直连被间歇性拦截时 GitHub 会回 401），并设 `GIT_TERMINAL_PROMPT=0` 避免 git 卡在凭据询问上。
+
 ## [0.3.21] - 2026-10-15
 
 ### 任务收官
@@ -21,7 +42,7 @@
 - **fail-closed**：校验查询本身失败（DB 侧）时拒绝本次收官，下一轮心跳重试。
 - **两层互补**：工具层给模型即时反馈（改道 `prove_goal`）；落点层兜住所有收官路径（含模型之外的路径）。移植来源：CyberStrikeAI `internal/agentfinalizer/decision.go`（`Decide`/`hasCompletedEvidence`，Apache-2.0）与 `internal/handler/finalization_auto_continue.go`（缺证据不收敛、让 agent 继续跑）。
 
-#### 验收（公司机实测，2026-10-15）
+#### 验收（实测，2026-10-15）
 
 - **单元测试**（WSL PG，`ARTEX_CONFIG` 指向运行配置、以 artex 用户跑）：`TestGoalEvidenceGap`（跨任务证据算数、证据节点被删落回缺证据、非 fact/finding 的 proves 源不算）、`TestGoalMetEvidenceGate`（open 拒 / 缺边拒 / 有边放 / 开关关恢复旧行为）、`TestProveGoalAutoCompleteEvidenceGate`（缺证据兄弟目标不自动收官、补齐后自动收官）—— 全绿。
 - **A/B/D/E 对照**（SQL 构造状态 + 任务控制 API 驱动，脚本 `F:\Claude_Code\_scratch_finalizer\`）：**A** 旧二进制「met 无证据 + 前沿抽干」→ 3 秒落 `done`（旁路实锤）；**B** 新二进制同状态 → 拒绝收官：目标退回 `open`、写入系统 hint、任务保持 running（服务日志 `[finalizer] task 6 证据门未过(goalless): open=0 unproven=1 — 拒绝收官`）；**D** 新二进制 + `goal_evidence_gate=false` → 恢复旧行为落 `done`（开关有效）；**E** 新二进制「有 proves 证据边」→ 正常落 `done`（无误伤）。
@@ -63,7 +84,7 @@
 - **base64 只认可打印文本**：解码结果必须是合法 UTF-8 且至少 90% 可打印，否则不作为候选，免得把哈希、十六进制 ID 这类东西变成噪音。
 - **开关与规则缓存同源**：`DecodeGuard()` 与 `rules()` 用同一套双重检查懒加载；否则在发生任何工具调用之前读到的是零值，API 会显示 `false` 而实际匹配是开着的。
 - **移植来源**：CyberStrikeAI `internal/toolguard/toolguard.go`（Apache-2.0）的 `candidateTexts` / `decodePercentEscapes` / `hexValue`；`\xNN`、`%uNNNN`、base64 三类是本项目在其之上补的。
-- **验收（公司机实测，A/B/C/D 对照）**：旧二进制上，agent 用 `Write` 写入含 `m%6Bfs` 的内容**未被拦截**（文件被创建）；换装后同一输入被既有规则「磁盘格式化类 mkfs」`\bmkfs\b` 判 `denied`；把 `decode_guard` 置 `false` 后不再拦截，置回 `true` 后再次拦截。
+- **验收（实测，A/B/C/D 对照）**：旧二进制上，agent 用 `Write` 写入含 `m%6Bfs` 的内容**未被拦截**（文件被创建）；换装后同一输入被既有规则「磁盘格式化类 mkfs」`\bmkfs\b` 判 `denied`；把 `decode_guard` 置 `false` 后不再拦截，置回 `true` 后再次拦截。
 
 ## [0.3.20] - 2026-10-14
 
@@ -97,7 +118,7 @@
 
 #### 设计说明
 
-- **动机**：同一模型（Mac 上 GLM-5.3）下 ARTEX 的模型拒绝率显著高于 CSI。差异集中在提示词对「授权 / 范围」的处理方式——CSI 用「授权已前置裁决、不得反问」短路模型的授权顾虑，ARTEX 的克制措辞反而给了模型合法的停顿理由。
+- **动机**：同一模型（GLM-5.3）下 ARTEX 的模型拒绝率显著高于 CSI。差异集中在提示词对「授权 / 范围」的处理方式——CSI 用「授权已前置裁决、不得反问」短路模型的授权顾虑，ARTEX 的克制措辞反而给了模型合法的停顿理由。
 - **只改提示词措辞**：不动 `intercept` 拦截层、不动 `norma`、不动工具绑定与主循环。
 
 ## [0.3.18] - 2026-10-14
@@ -110,7 +131,7 @@
 
 #### 设计说明
 
-- **`release.yml` 的 docker job 暂停**：它推的是上游的 Docker Hub 仓库且本机无凭据，每次发版必失败；现以 `if: false` 停用（Release 与更新链路不受影响）。家里 Mac 若走"拉镜像更新"，后续改推 `ghcr.io` 时恢复此 job。
+- **`release.yml` 的 docker job 暂停**：它推的是上游的 Docker Hub 仓库且本地无凭据，每次发版必失败；现以 `if: false` 停用（Release 与更新链路不受影响）。本地部署若走"拉镜像更新"，后续改推 `ghcr.io` 时恢复此 job。
 
 ## [0.3.17] - 2026-10-14
 
@@ -118,7 +139,7 @@
 
 #### 设计说明
 
-- **本机部署文档随自更新收口更新**：`本机部署记录.md` 增补 2026-10-14 维护记录（适配入库、发布源改指本维护仓库、版本号推导机制）；`本机上手指南.md` 更新「版本与更新」说明，并同步源码/版本信息。
+- **部署文档随自更新收口更新**：部署记录增补 2026-10-14 维护记录（适配入库、发布源改指本维护仓库、版本号推导机制）；上手指南更新「版本与更新」说明，并同步源码/版本信息。
 
 ## [0.3.16] - 2026-10-14
 

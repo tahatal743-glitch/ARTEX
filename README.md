@@ -7,7 +7,7 @@ AI 自主渗透测试系统（Go 后端 + Next.js 前端）
 
 🌐 **在线 Demo（模拟数据）**： [https://artex-demo.mhtsec.com](https://artex-demo.mhtsec.com)
 
-📦 **本仓库为 ARTEX 的长期维护 fork（上游 `Autumn-27/ARTEX` 已 404）。Release 供本机与家里 Mac 一键更新使用；docker 镜像发布暂停。**
+📦 **本仓库为 ARTEX 的长期维护 fork（上游 `Autumn-27/ARTEX` 已 404）。Release 供本地部署一键更新使用；docker 镜像发布暂停。**
 
 </div>
 
@@ -98,6 +98,10 @@ docker compose up -d          # 拉取 mianhuatang11/artex 镜像 + postgres
 > Dockerfile 为多阶段构建（前端静态导出 → Go 静态编译 → 运行镜像），默认走国内友好依赖源，可加 `--build-arg GOPROXY=... / --build-arg NPM_REGISTRY=...` 覆盖。
 
 镜像已含常用工具（ripgrep/curl/vim/npm/nmap…）；`./skills` 与 `./data` 以绑定挂载持久化。
+
+> 需要**带工具层**的镜像（88 条内置工具配方所需的侦察/利用命令，构建期一次装齐）时，见
+> [`docker/README.md`](docker/README.md)：预编译二进制快速路径（`Dockerfile.runtime`）与全源码构建
+> （`Dockerfile`）两条路线，含浏览器下载源与架构说明。
 
 远程 MCP 可在系统设置中选择 `http`（Streamable HTTP）或 `sse`（旧版 SSE）。
 旧版 SSE 服务通常使用 `GET /sse` 建立事件流，再通过服务返回的

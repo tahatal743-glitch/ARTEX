@@ -34,10 +34,20 @@ RUN CGO_ENABLED=0 GOARCH="${TARGETARCH}" go build -tags embedui -trimpath -o /ou
 
 ########## 阶段 3：运行镜像（同原版：工具 + Playwright 预装）##########
 FROM python:3.12-slim-bookworm
+ARG TARGETARCH
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-# 运行层的全局 npm 装包与 chromium 下载同样走国内源（对全球网络同样可达）
+# Playwright 相关版本与浏览器下载源。钉版而非 @latest：@latest 会漂移到镜像站尚未同步的
+# 浏览器构建，导致构建随机失败（chromium 与 @playwright/mcp/cli 的版本必须配套）。
+ARG PLAYWRIGHT_MCP_VERSION=0.0.83
+ARG PLAYWRIGHT_CLI_VERSION=0.1.22
+ARG PLAYWRIGHT_VERSION=1.64.0-alpha-1790635538000
+ARG PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
+# 运行层的全局 npm 装包与 chromium 下载同样走国内源（对全球网络同样可达）。
+# 镜像站缺件时（例如 arm64 的 cft 构建未同步）会在下面回落官方 CDN；
+# 若两条都不通，可自建镜像目录并用 --build-arg PLAYWRIGHT_DOWNLOAD_HOST= 指过来，
+# 见 docker/README.md「浏览器下载源」。
 ENV npm_config_registry=$NPM_REGISTRY \
-    PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright
+    PLAYWRIGHT_DOWNLOAD_HOST=$PLAYWRIGHT_DOWNLOAD_HOST
 # 常用工具：ripgrep / curl / vim，加一批 recon 常备件（按需增删）。
 # Node 从 NodeSource 装 20.x：bookworm 自带的 apt nodejs 是 18，Playwright 要求 >=20。
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -51,10 +61,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # @playwright/cli：提供 playwright-cli，装完顺带 --help 验证可执行。
 # 再装 playwright（提供浏览器管理），装完用 --with-deps 预置 chromium 及其系统依赖，
 # 这样容器内 MCP/CLI 首次启动即可用，不再联网下载浏览器。
-RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@latest \
+RUN npm install -g @playwright/mcp@${PLAYWRIGHT_MCP_VERSION} @playwright/cli@${PLAYWRIGHT_CLI_VERSION} playwright@${PLAYWRIGHT_VERSION} \
     && playwright-cli --help \
-    && playwright install --with-deps chromium \
+    && (playwright install --with-deps chromium \
+        || { echo ">>> 浏览器下载源缺件，回落官方 CDN 重试"; PLAYWRIGHT_DOWNLOAD_HOST= playwright install --with-deps chromium; }) \
     && rm -rf /var/lib/apt/lists/*
+# 工具层：88 条内置配方所需的侦察/利用命令（apt 系统包 + pip 工具 + GitHub Release
+# 二进制 + perl/python 脚本类 + Rust 现编的 aardwolf/x8）。三个脚本幂等、可重复执行，
+# 按 ARTEX_TARGET_ARCH 选对应架构的发布资产；明细与缓装清单见脚本头部注释。
+# GH_TOKEN 可选：走 BuildKit secret（--secret id=gh_token,src=<文件>）只用于提高 GitHub
+# API 限额，不落盘、不进镜像层；不传则匿名访问（每小时 60 次限流）。
+COPY docker/tool-install.sh docker/tool-fix.sh docker/tool-rust.sh /tmp/
+RUN --mount=type=secret,id=gh_token,required=false \
+    set -eu; \
+    export GH_TOKEN="$(cat /run/secrets/gh_token 2>/dev/null || true)"; \
+    ARTEX_TARGET_ARCH="${TARGETARCH}" sh /tmp/tool-install.sh && \
+    ARTEX_TARGET_ARCH="${TARGETARCH}" sh /tmp/tool-fix.sh && \
+    ARTEX_TARGET_ARCH="${TARGETARCH}" sh /tmp/tool-rust.sh && \
+    rm -f /tmp/tool-*.sh
 WORKDIR /app
 # 构建阶段产出的单二进制（内嵌前端）
 COPY --from=gobuild /out/artex /app/artex
