@@ -25,6 +25,18 @@
 - **`hashpump` 改用存活镜像**：原仓 `bwall/HashPump` 已从 GitHub 删除（404 时 git 会转而索要凭据并失败），改用同一份代码的 `miekrr/HashPump`；该仓没有 makefile，按实际情况改为 g++ 直接编译。汇总输出增加 `hashpump -t` 算法自检。
 - **GitHub 直连重试**：克隆与 Release 资产查询各加最多 3 次重试（直连被间歇性拦截时 GitHub 会回 401），并设 `GIT_TERMINAL_PROMPT=0` 避免 git 卡在凭据询问上。
 
+### 提示词
+
+#### 新增的功能
+
+- **worker / pentest 提示词移植 CSI 的两段激励纪律**：在 `workerDefaultTmpl`（`agent/worker.go`）与 `pentestDefaultTmpl`（`agent/promptcatalog.go`）的「授权状态 / 范围与深度」段之后、角色正文之前，各插入一段（711 字符，两处逐字相同）——「执行强度（边界之内火力全开）」5 条（对边界内目标全力推进、初次受阻不等于此路不通、基础技巧无效再上非常规构造、聚焦可证明的真实影响、批量动作脚本化）与「失败与阻塞纪律」3 条（工具失败的分级处置、同工具同类参数连续失败 3 次必须换策略、404/空结果不得直接收尾）。措辞来源：CyberStrikeAI 的激励段；语义与既有的「边界之内全力推进，边界之外的目标一律不碰」一致，只在边界内加强执行强度。
+- 两段**只进 worker 与 pentest 两个执行型角色**：`authzStatusBlock` 保持不动——它是八个内置角色共用的常量，改它会把 goals / planner / mainagent / auto / reporter / retester 一并改掉。
+
+#### 设计说明
+
+- **只改提示词正文**：不动 `intercept` 拦截层、不动工具绑定与主循环。
+- **播种行为不变**：`BuiltinPromptSeeds` 只在某个 agent 尚无提示词时播种，存量库已切换过 `current_prompt_id` 的实例不受影响；本次改动面向新部署与代码内的渲染回退。
+
 ## [0.3.21] - 2026-10-15
 
 ### 任务收官
