@@ -1,0 +1,19 @@
+name: forbid-personal-docs
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-filenames:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject personal or deployment docs in tracked files
+        run: |
+          bad=$(git ls-files | grep -E '本机.*\.md$|.*交接.*\.md$|.*升级说明.*\.md$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Forbidden personal/deployment docs detected in tracked files:"
+            printf '%s\n' "$bad"
+            exit 1
+          fi
+          echo "OK: no forbidden filenames"
